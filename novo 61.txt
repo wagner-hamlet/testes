@@ -1,0 +1,111 @@
+using System;
+using System.Diagnostics;
+using System.IO.MemoryMappedFiles;
+using System.Runtime.InteropServices;
+
+namespace ConsoleApp
+{
+    class Program
+    {
+        const string GAME_WINDOW_TITLE = "Microsoft Flight Simulator";
+        const int SW_RESTORE = 9;
+        const int FLOAT_SIZE = 4; // Tamanho de um float em bytes
+
+        static void Main(string[] args)
+        {
+            Console.WriteLine("Procurando o processo do Flight Simulator...");
+            Process process = null;
+            while (process == null)
+            {
+                process = Process.GetProcessesByName("FlightSimulator")[0];
+            }
+            Console.WriteLine($"Processo do Flight Simulator encontrado: {process.ProcessName} ({process.Id})");
+
+            Console.WriteLine("Esperando 5 segundos para abrir a janela do Flight Simulator...");
+            System.Threading.Thread.Sleep(5000);
+
+            Console.WriteLine("Procurando a janela do Flight Simulator...");
+            IntPtr hWnd = IntPtr.Zero;
+            while (hWnd == IntPtr.Zero)
+            {
+                hWnd = FindWindowByCaption(IntPtr.Zero, GAME_WINDOW_TITLE);
+            }
+            Console.WriteLine("Janela do Flight Simulator encontrada!");
+
+            SetForegroundWindow(hWnd);
+            ShowWindow(hWnd, SW_RESTORE);
+
+            // Configurações da memória compartilhada
+            const string MEMORY_MAPPED_FILE_NAME = "Local\\SimConnect";
+            const int MEMORY_MAPPED_FILE_SIZE = 65536;
+
+            using (var mmf = MemoryMappedFile.CreateOrOpen(MEMORY_MAPPED_FILE_NAME, MEMORY_MAPPED_FILE_SIZE))
+            {
+                using (var accessor = mmf.CreateViewAccessor(0, MEMORY_MAPPED_FILE_SIZE))
+                {
+                    // Definindo o tamanho do float em bytes e o offset do endereço de memória
+                    long altitudeOffset = 0x0570; // offset do endereço de memória da altitude
+                    float altitude;
+
+                    while (true)
+                    {
+                        // Lê o valor da altitude diretamente da memória compartilhada
+                        altitude = accessor.ReadSingle(altitudeOffset);
+
+                        Console.WriteLine($"Altitude: {altitude}");
+
+                        System.Threading.Thread.Sleep(1000);
+                    }
+                }
+            }
+
+            Console.WriteLine("Pressione qualquer tecla para sair.");
+            Console.ReadKey();
+        }
+
+        private static IntPtr FindWindowByCaption(IntPtr hWndParent, string title)
+        {
+            if (hWndParent == IntPtr.Zero)
+            {
+                hWndParent = Process.GetCurrentProcess().MainWindowHandle;
+            }
+
+            IntPtr hWnd = IntPtr.Zero;
+            while ((hWnd = FindWindowEx(hWndParent, hWnd, null, null)) != IntPtr.Zero)
+            {
+                if (GetWindowText(hWnd).StartsWith(title))
+                {
+                    return hWnd;
+                }
+            }
+
+            return IntPtr.Zero;
+        }
+
+        private static string GetWindowText(IntPtr hWnd)
+        {
+            int length = GetWindowTextLength(hWnd);
+            if (length == 0)
+            {
+                return string.Empty;
+            }
+
+            var builder = new System.Text.StringBuilder(length + 1);
+            GetWindowText(hWnd, builder, builder.Capacity);
+            return builder.ToString();
+        }
+
+        [DllImport("user32.dll", CharSet = CharSet.Auto)]
+        private static extern int GetWindowTextLength(IntPtr hWnd);
+
+        [DllImport("user32.dll", CharSet = CharSet.Auto)]
+        private static extern int GetWindowText(IntPtr hWnd, System.Text.StringBuilder lpString, int nMaxCount);
+
+        [DllImport("user32.dll")]
+        private static extern bool SetForegroundWindow(IntPtr hWnd);
+
+        [DllImport("user32.dll")]
+        private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr FindWindow
